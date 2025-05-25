@@ -1,6 +1,5 @@
 import streamlit as st
 
-# THIS MUST BE THE FIRST STREAMLIT COMMAND
 st.set_page_config(
     page_title="Emotion Classification with SVM",
     page_icon="😊",
@@ -8,7 +7,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Now import everything else
 import joblib
 import pandas as pd
 import numpy as np
@@ -19,7 +17,6 @@ import plotly.graph_objects as go
 from sklearn.metrics import classification_report
 import json
 
-# Download required NLTK data
 @st.cache_resource
 def download_nltk_data():
     try:
@@ -32,7 +29,6 @@ def download_nltk_data():
 
 download_nltk_data()
 
-# Import your custom modules
 from src.preprocessing import load_data, preprocess_data, clean_text
 from src.feature_extraction import extract_features
 from src.train_model import train_svm
@@ -43,7 +39,6 @@ from sklearn.svm import SVC
 def train_and_save_models():
     """Train models if they don't exist"""
     
-    # Check if models already exist
     models_exist = all([
         os.path.exists('models/svm_linear.pkl'),
         os.path.exists('models/svm_rbf.pkl'), 
@@ -58,39 +53,31 @@ def train_and_save_models():
     st.info("🔄 No pre-trained models found. Training models now...")
     
     try:
-        # Create models directory
         os.makedirs('models', exist_ok=True)
         
-        # Check if training data exists
         if not os.path.exists('data/train.csv'):
             st.error("❌ Training data not found. Please ensure 'data/train.csv' exists.")
             return False
         
-        # Load and preprocess data
         with st.spinner("Loading and preprocessing data..."):
             df = load_data("data/train.csv")
             df = preprocess_data(df)
         
-        # Extract features
         with st.spinner("Extracting features..."):
             X, vectorizer = extract_features(df['text_clean'])
             y = df['label']
         
-        # Save vectorizer
         joblib.dump(vectorizer, 'models/vectorizer.pkl')
         
-        # Train/test split
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.2, random_state=42, stratify=y
         )
         
-        # Train models for each kernel
         kernels = ['linear', 'rbf', 'poly']
         progress_bar = st.progress(0)
         
         for i, kernel in enumerate(kernels):
             with st.spinner(f"Training {kernel} kernel..."):
-                # Use SVC with probability=True for better predictions
                 model = SVC(
                     kernel=kernel, 
                     class_weight='balanced', 
@@ -99,10 +86,8 @@ def train_and_save_models():
                 )
                 model.fit(X_train, y_train)
                 
-                # Save model
                 joblib.dump(model, f'models/svm_{kernel}.pkl')
                 
-                # Update progress
                 progress_bar.progress((i + 1) / len(kernels))
         
         st.success("✅ Models trained and saved successfully!")
@@ -116,7 +101,6 @@ def train_and_save_models():
 def load_models():
     """Load models and vectorizer"""
     
-    # First try to train models if they don't exist
     if not train_and_save_models():
         return None, None
     
@@ -145,13 +129,10 @@ def load_models():
 def predict_emotion(text, model, vectorizer):
     """Predict emotion for given text"""
     try:
-        # Clean text
         cleaned_text = clean_text(text)
         
-        # Transform text
         text_vector = vectorizer.transform([cleaned_text])
         
-        # Predict
         prediction = model.predict(text_vector)[0]
         probabilities = model.predict_proba(text_vector)[0] if hasattr(model, 'predict_proba') else None
         
@@ -161,21 +142,18 @@ def predict_emotion(text, model, vectorizer):
         return None, None
 
 def main():
-    # Title and description
     st.title("🎭 Emotion Classification with SVM")
     st.markdown("""
     This app uses Support Vector Machine (SVM) to classify emotions in text.
     Choose different SVM kernels to compare their performance on emotion detection.
     """)
     
-    # Load models (this will train them if they don't exist)
     models, vectorizer = load_models()
     
     if models is None or vectorizer is None:
         st.error("❌ Failed to load or train models. Please check your data and try again.")
         st.stop()
     
-    # Sidebar
     st.sidebar.header("🔧 Model Configuration")
     available_kernels = list(models.keys())
     selected_kernel = st.sidebar.selectbox(
@@ -184,7 +162,6 @@ def main():
         index=0 if 'linear' in available_kernels else 0
     )
     
-    # Main content
     col1, col2 = st.columns([2, 1])
     
     with col1:
@@ -206,10 +183,8 @@ def main():
                     )
                     
                     if prediction:
-                        # Display result
                         st.success(f"**Predicted Emotion: {prediction.upper()}**")
                         
-                        # Show probabilities if available
                         if probabilities is not None:
                             prob_df = pd.DataFrame({
                                 'Emotion': models[selected_kernel].classes_,
@@ -231,7 +206,6 @@ def main():
     with col2:
         st.header("📊 Model Information")
         
-        # Model details
         st.info(f"""
         **Current Model:** SVM with {selected_kernel} kernel
         
@@ -244,7 +218,6 @@ def main():
         - Surprise 😲
         """)
         
-        # Example texts
         st.header("💡 Try These Examples")
         examples = {
             "Joy": "I'm so happy and excited about this amazing day!",
