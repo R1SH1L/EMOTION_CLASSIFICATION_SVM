@@ -1,14 +1,6 @@
 import streamlit as st
-import joblib
-import pandas as pd
-import numpy as np
-from src.preprocessing import clean_text
-import os
-import plotly.express as px
-import plotly.graph_objects as go
-from sklearn.metrics import classification_report
-import json
 
+# THIS MUST BE THE FIRST STREAMLIT COMMAND
 st.set_page_config(
     page_title="Emotion Classification with SVM",
     page_icon="😊",
@@ -16,6 +8,35 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Now import everything else
+import joblib
+import pandas as pd
+import numpy as np
+import nltk
+import os
+import plotly.express as px
+import plotly.graph_objects as go
+from sklearn.metrics import classification_report
+import json
+
+# Import your custom modules
+from src.preprocessing import clean_text
+
+# Download required NLTK data
+@st.cache_resource
+def download_nltk_data():
+    try:
+        nltk.download('stopwords', quiet=True)
+        nltk.download('punkt', quiet=True)
+        nltk.download('wordnet', quiet=True)
+        nltk.download('omw-1.4', quiet=True)
+    except:
+        pass
+
+# Call this after imports
+download_nltk_data()
+
+# Load models and vectorizer
 @st.cache_resource
 def load_models():
     try:
@@ -39,10 +60,13 @@ def load_models():
 def predict_emotion(text, model, vectorizer):
     """Predict emotion for given text"""
     try:
+        # Clean text
         cleaned_text = clean_text(text)
         
+        # Transform text
         text_vector = vectorizer.transform([cleaned_text])
         
+        # Predict
         prediction = model.predict(text_vector)[0]
         probabilities = model.predict_proba(text_vector)[0] if hasattr(model, 'predict_proba') else None
         
@@ -52,12 +76,14 @@ def predict_emotion(text, model, vectorizer):
         return None, None
 
 def main():
+    # Title and description
     st.title("🎭 Emotion Classification with SVM")
     st.markdown("""
     This app uses Support Vector Machine (SVM) to classify emotions in text.
     Choose different SVM kernels to compare their performance on emotion detection.
     """)
     
+    # Load models
     models, vectorizer = load_models()
     
     if models is None or vectorizer is None:
@@ -65,6 +91,7 @@ def main():
         st.info("Run the training script first: `python main.py`")
         return
     
+    # Sidebar
     st.sidebar.header("🔧 Model Configuration")
     available_kernels = list(models.keys())
     selected_kernel = st.sidebar.selectbox(
@@ -73,11 +100,13 @@ def main():
         index=0 if 'linear' in available_kernels else 0
     )
     
+    # Main content
     col1, col2 = st.columns([2, 1])
     
     with col1:
         st.header("📝 Text Input")
         
+        # Text input methods
         input_method = st.radio(
             "Choose input method:",
             ["Single Text", "Batch Upload"]
@@ -100,8 +129,10 @@ def main():
                         )
                         
                         if prediction:
+                            # Display result
                             st.success(f"**Predicted Emotion: {prediction.upper()}**")
                             
+                            # Show probabilities if available
                             if probabilities is not None:
                                 prob_df = pd.DataFrame({
                                     'Emotion': models[selected_kernel].classes_,
@@ -120,7 +151,7 @@ def main():
                 else:
                     st.warning("Please enter some text to analyze.")
         
-        else:  
+        else:  # Batch Upload
             uploaded_file = st.file_uploader(
                 "Upload CSV file with 'text' column:",
                 type=['csv']
@@ -150,9 +181,11 @@ def main():
                                 
                                 df['predicted_emotion'] = predictions
                                 
+                                # Display results
                                 st.success("Batch prediction completed!")
                                 st.dataframe(df)
                                 
+                                # Download results
                                 csv = df.to_csv(index=False)
                                 st.download_button(
                                     label="📥 Download Results",
@@ -161,6 +194,7 @@ def main():
                                     mime="text/csv"
                                 )
                                 
+                                # Show distribution
                                 emotion_counts = pd.Series(predictions).value_counts()
                                 fig = px.pie(
                                     values=emotion_counts.values,
@@ -175,6 +209,7 @@ def main():
     with col2:
         st.header("📊 Model Information")
         
+        # Model details
         st.info(f"""
         **Current Model:** SVM with {selected_kernel} kernel
         
@@ -187,6 +222,7 @@ def main():
         - Surprise 😲
         """)
         
+        # Example texts
         st.header("💡 Try These Examples")
         examples = {
             "Joy": "I'm so happy and excited about this amazing day!",
@@ -201,6 +237,7 @@ def main():
             if st.button(f"{emotion} Example", key=f"example_{emotion}"):
                 st.session_state.example_text = example_text
         
+        # If example was clicked, show it in text area
         if 'example_text' in st.session_state:
             st.text_area(
                 "Example Text:",
@@ -209,6 +246,7 @@ def main():
                 disabled=True
             )
     
+    # Footer
     st.markdown("---")
     st.markdown("""
     **About this app:**
