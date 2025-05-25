@@ -18,9 +18,9 @@ __pycache__/
 data/*.csv
 data/kagle/
 
-# Model files (large files)
-models/*.pkl
-models/*.joblib
+# Comment out these lines to include models
+# models/*.pkl
+# models/*.joblib
 
 # Results and logs
 results/
@@ -35,37 +35,3 @@ results/
 # OS files
 .DS_Store
 Thumbs.db
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-
-# PyInstaller
-*.manifest
-*.spec
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
-.pytest_cache/

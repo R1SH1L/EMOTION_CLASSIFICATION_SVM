@@ -19,9 +19,6 @@ import plotly.graph_objects as go
 from sklearn.metrics import classification_report
 import json
 
-# Import your custom modules
-from src.preprocessing import clean_text
-
 # Download required NLTK data
 @st.cache_resource
 def download_nltk_data():
@@ -33,28 +30,116 @@ def download_nltk_data():
     except:
         pass
 
-# Call this after imports
 download_nltk_data()
 
-# Load models and vectorizer
+# Import your custom modules
+from src.preprocessing import load_data, preprocess_data, clean_text
+from src.feature_extraction import extract_features
+from src.train_model import train_svm
+from sklearn.model_selection import train_test_split
+from sklearn.svm import SVC
+
+@st.cache_resource
+def train_and_save_models():
+    """Train models if they don't exist"""
+    
+    # Check if models already exist
+    models_exist = all([
+        os.path.exists('models/svm_linear.pkl'),
+        os.path.exists('models/svm_rbf.pkl'), 
+        os.path.exists('models/svm_poly.pkl'),
+        os.path.exists('models/vectorizer.pkl')
+    ])
+    
+    if models_exist:
+        st.success("✅ Pre-trained models found!")
+        return True
+    
+    st.info("🔄 No pre-trained models found. Training models now...")
+    
+    try:
+        # Create models directory
+        os.makedirs('models', exist_ok=True)
+        
+        # Check if training data exists
+        if not os.path.exists('data/train.csv'):
+            st.error("❌ Training data not found. Please ensure 'data/train.csv' exists.")
+            return False
+        
+        # Load and preprocess data
+        with st.spinner("Loading and preprocessing data..."):
+            df = load_data("data/train.csv")
+            df = preprocess_data(df)
+        
+        # Extract features
+        with st.spinner("Extracting features..."):
+            X, vectorizer = extract_features(df['text_clean'])
+            y = df['label']
+        
+        # Save vectorizer
+        joblib.dump(vectorizer, 'models/vectorizer.pkl')
+        
+        # Train/test split
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=y
+        )
+        
+        # Train models for each kernel
+        kernels = ['linear', 'rbf', 'poly']
+        progress_bar = st.progress(0)
+        
+        for i, kernel in enumerate(kernels):
+            with st.spinner(f"Training {kernel} kernel..."):
+                # Use SVC with probability=True for better predictions
+                model = SVC(
+                    kernel=kernel, 
+                    class_weight='balanced', 
+                    probability=True,
+                    random_state=42
+                )
+                model.fit(X_train, y_train)
+                
+                # Save model
+                joblib.dump(model, f'models/svm_{kernel}.pkl')
+                
+                # Update progress
+                progress_bar.progress((i + 1) / len(kernels))
+        
+        st.success("✅ Models trained and saved successfully!")
+        return True
+        
+    except Exception as e:
+        st.error(f"❌ Error training models: {str(e)}")
+        return False
+
 @st.cache_resource
 def load_models():
+    """Load models and vectorizer"""
+    
+    # First try to train models if they don't exist
+    if not train_and_save_models():
+        return None, None
+    
     try:
         models = {}
         for kernel in ['linear', 'rbf', 'poly']:
             model_path = f'models/svm_{kernel}.pkl'
             if os.path.exists(model_path):
                 models[kernel] = joblib.load(model_path)
+            else:
+                st.error(f"❌ Model not found: {model_path}")
+                return None, None
         
         vectorizer_path = 'models/vectorizer.pkl'
         if os.path.exists(vectorizer_path):
             vectorizer = joblib.load(vectorizer_path)
             return models, vectorizer
         else:
-            st.error("Vectorizer not found. Please train the model first.")
+            st.error("❌ Vectorizer not found")
             return None, None
+            
     except Exception as e:
-        st.error(f"Error loading models: {e}")
+        st.error(f"❌ Error loading models: {str(e)}")
         return None, None
 
 def predict_emotion(text, model, vectorizer):
@@ -83,13 +168,12 @@ def main():
     Choose different SVM kernels to compare their performance on emotion detection.
     """)
     
-    # Load models
+    # Load models (this will train them if they don't exist)
     models, vectorizer = load_models()
     
     if models is None or vectorizer is None:
-        st.error("Models not loaded. Please ensure you have trained models in the 'models' directory.")
-        st.info("Run the training script first: `python main.py`")
-        return
+        st.error("❌ Failed to load or train models. Please check your data and try again.")
+        st.stop()
     
     # Sidebar
     st.sidebar.header("🔧 Model Configuration")
@@ -106,105 +190,43 @@ def main():
     with col1:
         st.header("📝 Text Input")
         
-        # Text input methods
-        input_method = st.radio(
-            "Choose input method:",
-            ["Single Text", "Batch Upload"]
+        user_text = st.text_area(
+            "Enter your text:",
+            placeholder="Type or paste your text here...",
+            height=150
         )
         
-        if input_method == "Single Text":
-            user_text = st.text_area(
-                "Enter your text:",
-                placeholder="Type or paste your text here...",
-                height=150
-            )
-            
-            if st.button("🔍 Predict Emotion", type="primary"):
-                if user_text.strip():
-                    with st.spinner("Analyzing emotion..."):
-                        prediction, probabilities = predict_emotion(
-                            user_text, 
-                            models[selected_kernel], 
-                            vectorizer
-                        )
-                        
-                        if prediction:
-                            # Display result
-                            st.success(f"**Predicted Emotion: {prediction.upper()}**")
-                            
-                            # Show probabilities if available
-                            if probabilities is not None:
-                                prob_df = pd.DataFrame({
-                                    'Emotion': models[selected_kernel].classes_,
-                                    'Probability': probabilities
-                                }).sort_values('Probability', ascending=False)
-                                
-                                fig = px.bar(
-                                    prob_df, 
-                                    x='Emotion', 
-                                    y='Probability',
-                                    title="Emotion Probabilities",
-                                    color='Probability',
-                                    color_continuous_scale='viridis'
-                                )
-                                st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.warning("Please enter some text to analyze.")
-        
-        else:  # Batch Upload
-            uploaded_file = st.file_uploader(
-                "Upload CSV file with 'text' column:",
-                type=['csv']
-            )
-            
-            if uploaded_file is not None:
-                try:
-                    df = pd.read_csv(uploaded_file)
+        if st.button("🔍 Predict Emotion", type="primary"):
+            if user_text.strip():
+                with st.spinner("Analyzing emotion..."):
+                    prediction, probabilities = predict_emotion(
+                        user_text, 
+                        models[selected_kernel], 
+                        vectorizer
+                    )
                     
-                    if 'text' not in df.columns:
-                        st.error("CSV must contain a 'text' column")
-                    else:
-                        st.write("Preview of uploaded data:")
-                        st.dataframe(df.head())
+                    if prediction:
+                        # Display result
+                        st.success(f"**Predicted Emotion: {prediction.upper()}**")
                         
-                        if st.button("🔍 Predict Batch Emotions", type="primary"):
-                            with st.spinner("Processing batch predictions..."):
-                                predictions = []
-                                
-                                for text in df['text']:
-                                    pred, _ = predict_emotion(
-                                        str(text), 
-                                        models[selected_kernel], 
-                                        vectorizer
-                                    )
-                                    predictions.append(pred if pred else 'unknown')
-                                
-                                df['predicted_emotion'] = predictions
-                                
-                                # Display results
-                                st.success("Batch prediction completed!")
-                                st.dataframe(df)
-                                
-                                # Download results
-                                csv = df.to_csv(index=False)
-                                st.download_button(
-                                    label="📥 Download Results",
-                                    data=csv,
-                                    file_name="emotion_predictions.csv",
-                                    mime="text/csv"
-                                )
-                                
-                                # Show distribution
-                                emotion_counts = pd.Series(predictions).value_counts()
-                                fig = px.pie(
-                                    values=emotion_counts.values,
-                                    names=emotion_counts.index,
-                                    title="Emotion Distribution in Batch"
-                                )
-                                st.plotly_chart(fig, use_container_width=True)
-                
-                except Exception as e:
-                    st.error(f"Error processing file: {e}")
+                        # Show probabilities if available
+                        if probabilities is not None:
+                            prob_df = pd.DataFrame({
+                                'Emotion': models[selected_kernel].classes_,
+                                'Probability': probabilities
+                            }).sort_values('Probability', ascending=False)
+                            
+                            fig = px.bar(
+                                prob_df, 
+                                x='Emotion', 
+                                y='Probability',
+                                title="Emotion Probabilities",
+                                color='Probability',
+                                color_continuous_scale='viridis'
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.warning("Please enter some text to analyze.")
     
     with col2:
         st.header("📊 Model Information")
@@ -235,25 +257,13 @@ def main():
         
         for emotion, example_text in examples.items():
             if st.button(f"{emotion} Example", key=f"example_{emotion}"):
-                st.session_state.example_text = example_text
-        
-        # If example was clicked, show it in text area
-        if 'example_text' in st.session_state:
-            st.text_area(
-                "Example Text:",
-                value=st.session_state.example_text,
-                height=100,
-                disabled=True
-            )
-    
-    # Footer
-    st.markdown("---")
-    st.markdown("""
-    **About this app:**
-    This emotion classification system uses Support Vector Machine (SVM) with different kernels 
-    to predict emotions in text. The model was trained on emotion-labeled text data and can 
-    classify text into 6 different emotional categories.
-    """)
+                st.text_area(
+                    "Example Text:",
+                    value=example_text,
+                    height=100,
+                    disabled=True,
+                    key=f"example_display_{emotion}"
+                )
 
 if __name__ == "__main__":
     main()
